@@ -1,0 +1,130 @@
+pragma solidity ^0.8.0;
+
+import "../../contracts/compound-v2-fork/WhitePaperInterestRateModel.sol";
+import "../../contracts/compound-v2-fork/ComptrollerInterface.sol";
+import "../../contracts/compound-v2-fork/CErc20Delegator.sol";
+import "../../contracts/compound-v2-fork/CErc20Delegate.sol";
+import "../../contracts/compound-v2-fork/Comptroller.sol";
+import "../../contracts/utilities/MarketAidFactory.sol";
+import "../../contracts/periphery/TokenWithFaucet.sol";
+import "../../contracts/utilities/MarketAid.sol";
+import "../../contracts/periphery/WETH9.sol";
+import "../../contracts/RubiconMarket.sol";
+import "../../contracts/V2Migrator.sol";
+import "forge-std/Test.sol";
+
+/// @notice proxy isn't used here
+contract ProtocolDeploymentTest is Test {
+  //========================CONSTANTS========================
+  address public owner;
+  address private user1 = address(1);
+  address private user2 = address(2);
+  address private user3 = address(3);
+  address private user4 = address(4);
+  address FEE_TO = 0x0000000000000000000000000000000000000FEE;
+  // core contracts
+  RubiconMarket market;
+  Comptroller comptroller;
+  // test tokens
+  TokenWithFaucet TEST;
+  TokenWithFaucet TUSDC;
+  WETH9 WETH;
+  // Pools
+  WhitePaperInterestRateModel irModel;
+  CErc20Delegate bathTokenImplementation;
+  CErc20Delegator bathTEST;
+  CErc20Delegator bathTUSDC;
+  V2Migrator migrator;
+  // MarketAid
+  MarketAidFactory marketAidFactory;
+
+  // deployRubiconProtocolFixture()
+  function setUp() public {
+    owner = msg.sender;
+    // deploy Comptroller instance
+    comptroller = new Comptroller();
+
+    // deploy new Market instance and init
+
+    // deploy test tokens
+    TEST = new TokenWithFaucet(user1, "Test", "TEST", 18);
+    TUSDC = new TokenWithFaucet(user1, "Test Stablecoin", "TUSDC", 6);
+    WETH = new WETH9();
+
+    // create InterestRateModel;
+    // baseRate = 0.3, multiplierPerYear = 0.02
+    irModel = new WhitePaperInterestRateModel(3e17, 2e16);
+    bathTokenImplementation = new CErc20Delegate();
+    bathTEST = new CErc20Delegator(
+      address(TEST),
+      ComptrollerInterface(address(comptroller)),
+      irModel,
+      2e26,
+      "TestBathToken",
+      "bathTEST",
+      18,
+      payable(owner),
+      address(bathTokenImplementation),
+      ""
+    ); //3331611
+    bathTUSDC = new CErc20Delegator(
+      address(TUSDC),
+      ComptrollerInterface(address(comptroller)),
+      irModel,
+      2e15,
+      "TestBathStablecoin",
+      "bathTUSDC",
+      6,
+      payable(owner),
+      address(bathTokenImplementation),
+      ""
+    );
+
+    vm.startPrank(address(10));
+    market = new RubiconMarket();
+    market.initialize(FEE_TO);
+    market.setMakerFee(0);
+    market.setFeeTo(address(2));
+    market.setFeeBPS(10);
+    vm.stopPrank();
+
+    vm.startPrank(user1);
+    TUSDC.faucet();
+    TUSDC.transfer(user3,100);
+    vm.stopPrank();
+    vm.prank(user2);
+    TEST.faucet();
+    vm.startPrank(user1);
+    deal(user1, 100 ether);
+    // place ask and bid for TEST/TUSDC pair
+
+    // support cToken market
+    comptroller._supportMarket(CToken(address(bathTEST)));
+    comptroller._supportMarket(CToken(address(bathTUSDC)));
+
+    // add some $$$ to the Market
+
+    // Aid for the Market
+    marketAidFactory = new MarketAidFactory();
+    marketAidFactory.initialize(address(market));
+    vm.stopPrank();
+
+    // router coming soonTM
+  }
+
+
+  //MED SEV FINDING "Cancel,Make won't update _best mapping value" report
+  function test_makeWontUpdate_BestMappingValue() public {
+    vm.startPrank(user1);
+    TUSDC.approve(address(market),100);
+    market.make(TUSDC,TEST, 100,2); // offer with custom owner and recipient
+    vm.stopPrank();
+    vm.startPrank(user2);
+    TEST.approve(address(market),100);
+    market.buyAllAmount(TUSDC,100,TEST,100);
+    TUSDC.balanceOf(user2);
+  }
+
+  
+
+}
