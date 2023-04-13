@@ -112,7 +112,6 @@ contract ProtocolDeploymentTest is Test {
     // router coming soonTM
   }
 
-
   //MED SEV FINDING "Cancel,Make won't update _best mapping value" report
   function test_makeWontUpdate_BestMappingValue() public {
     vm.startPrank(user1);
@@ -125,6 +124,34 @@ contract ProtocolDeploymentTest is Test {
     TUSDC.balanceOf(user2);
   }
 
-  
+  //MED SEV FINDING "Cannot cancel order made with make" pt 1/2
+  ///@notice shows that order by "make" can be removed by fill it.
+  function test_cannotCancelOrder1() public {
+    vm.startPrank(user1);
+    TUSDC.approve(address(market),3);
+    market.offer(1,TUSDC,100,TEST);
+    market.make(TUSDC,TEST,2,100);
+    market.cancel(1);
+    vm.stopPrank();
+    vm.startPrank(user2);
+    market.getOffer(2);
+    TEST.approve(address(market),100);
+    market.buy(2,2);
+    market.getOffer(2);
+  }
+
+  //MED SEV FINDING "Cannot cancel order made with make" pt 2/2
+  ///@notice shows that cannot be removed throwing the "can't hide" revert message.
+  function test_cannotCancelOrder2() public {
+    vm.startPrank(user1);
+    TUSDC.approve(address(market),3);
+    market.offer(1,TUSDC,100,TEST);
+    market.make(TUSDC,TEST,2,100);
+    market.cancel(2);
+    vm.stopPrank();
+  }
+
+
+
 
 }
